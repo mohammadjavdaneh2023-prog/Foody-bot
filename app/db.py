@@ -227,18 +227,40 @@ class Database:
                 (seconds, error_class[:100], job_id),
             )
 
+    def global_send_wait(self, minimum_interval: float) -> float:
+        if minimum_interval <= 0:
+            return 0.0
+        with self.pool.connection() as conn:
+            row = conn.execute(
+                """
+                SELECT GREATEST(
+                    0,
+                    EXTRACT(EPOCH FROM (
+                        last_successful_send_at + (%s * interval '1 second') - now()
+                    ))
+                ) AS wait_seconds
+                FROM service_runtime
+                WHERE singleton=TRUE
+                """,
+                (minimum_interval,),
+            ).fetchone()
+        return float(row["wait_seconds"] or 0) if row else 0.0
+
     def finish_job(self, job: SendJob, status: str, error_class: str | None = None) -> None:
         if status not in {"sent", "cancelled", "failed", "ambiguous"}:
             raise ValueError("Invalid terminal job status")
         with self.pool.connection() as conn, conn.transaction():
-            conn.execute(
+            transitioned = conn.execute(
                 """
-                    UPDATE outbound_jobs
-                    SET status=%s,completed_at=now(),updated_at=now(),error_class=%s
-                    WHERE id=%s AND status='sending'
-                    """,
+                UPDATE outbound_jobs
+                SET status=%s,completed_at=now(),updated_at=now(),error_class=%s
+                WHERE id=%s AND status='sending'
+                RETURNING id
+                """,
                 (status, error_class[:100] if error_class else None, job.id),
-            )
+            ).fetchone()
+            if transitioned is None:
+                return
             event_type = {
                 "sent": "SENT",
                 "cancelled": "SEND_CANCELLED",
@@ -246,19 +268,20 @@ class Database:
                 "ambiguous": "SEND_AMBIGUOUS",
             }[status]
             if status == "sent":
+                conn.execute("UPDATE service_runtime SET last_successful_send_at=now() WHERE singleton=TRUE")
                 conn.execute(
                     """
-                        INSERT INTO contact_history(profile_id,sender_id,last_sent_at) VALUES (%s,%s,now())
-                        ON CONFLICT(profile_id,sender_id) DO UPDATE SET last_sent_at=excluded.last_sent_at
-                        """,
+                    INSERT INTO contact_history(profile_id,sender_id,last_sent_at) VALUES (%s,%s,now())
+                    ON CONFLICT(profile_id,sender_id) DO UPDATE SET last_sent_at=excluded.last_sent_at
+                    """,
                     (job.profile_id, job.sender_id),
                 )
             conn.execute(
                 """
-                    INSERT INTO event_logs(
-                        event_type,profile_id,source_chat_id,source_message_id,sender_id,detail
-                    ) VALUES (%s,%s,%s,%s,%s,%s)
-                    """,
+                INSERT INTO event_logs(
+                    event_type,profile_id,source_chat_id,source_message_id,sender_id,detail
+                ) VALUES (%s,%s,%s,%s,%s,%s)
+                """,
                 (
                     event_type,
                     job.profile_id,

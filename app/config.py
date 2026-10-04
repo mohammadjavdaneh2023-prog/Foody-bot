@@ -30,6 +30,7 @@ class Config:
     min_send_interval: float
     default_cooldown: int
     job_poll_interval: float
+    poller_lock_wait_seconds: float
     proxy: dict | None
 
     @classmethod
@@ -65,9 +66,11 @@ class Config:
         min_interval = float(os.getenv("MIN_SEND_INTERVAL_SECONDS", "1.0"))
         cooldown = int(os.getenv("DEFAULT_USER_COOLDOWN_SECONDS", "900"))
         job_poll_interval = float(os.getenv("JOB_POLL_INTERVAL_SECONDS", "1.0"))
-        if min_interval < 0 or cooldown < 0 or job_poll_interval <= 0:
+        poller_lock_wait_seconds = float(os.getenv("POLLER_LOCK_WAIT_SECONDS", "120"))
+        if min_interval < 0 or cooldown < 0 or job_poll_interval <= 0 or poller_lock_wait_seconds < 0:
             raise ValueError(
-                "Intervals and cooldown must be non-negative; job poll interval must be positive"
+                "Intervals, cooldown and poller lock wait must be non-negative; "
+                "job poll interval must be positive"
             )
         if not 1 <= port <= 65535:
             raise ValueError("PORT must be between 1 and 65535")
@@ -89,6 +92,7 @@ class Config:
             min_send_interval=min_interval,
             default_cooldown=cooldown,
             job_poll_interval=job_poll_interval,
+            poller_lock_wait_seconds=poller_lock_wait_seconds,
             proxy=proxy_from_env(),
         )
 

@@ -20,11 +20,12 @@ class DatabaseIntegrationTests(unittest.TestCase):
         with psycopg.connect(self.database_url) as conn:
             conn.execute(
                 """
-                TRUNCATE event_logs,outbound_jobs,recipient_opt_outs,contact_history,
+                TRUNCATE event_logs,outbound_jobs,recipient_opt_outs,contact_history,service_runtime,
                     telegram_updates,schedule_windows,
                     reply_messages,not_terms,rule_terms,rule_groups,profiles RESTART IDENTITY CASCADE
                 """
             )
+            conn.execute("INSERT INTO service_runtime(singleton,last_successful_send_at) VALUES (TRUE,NULL)")
         self.db = Database(self.database_url)
 
     def tearDown(self):
@@ -70,3 +71,19 @@ class DatabaseIntegrationTests(unittest.TestCase):
         self.assertTrue(self.db.is_opted_out(99))
         self.db.opt_in(99)
         self.assertFalse(self.db.is_opted_out(99))
+
+    def test_global_send_interval_survives_database_client_restart(self):
+        profile_id = self.db.create_profile("lunch", 0)
+        self.db.add_reply(profile_id, "سلام")
+        profile = self.db.profile(profile_id)
+        self.db.enqueue_match(profile, -1001, 44, 101)
+        job = self.db.claim_next_job()
+        self.db.finish_job(job, "sent")
+        first_wait = self.db.global_send_wait(60)
+        self.assertGreater(first_wait, 55)
+
+        self.db.close()
+        self.db = Database(self.database_url)
+        second_wait = self.db.global_send_wait(60)
+        self.assertGreater(second_wait, 55)
+        self.assertLessEqual(second_wait, first_wait)

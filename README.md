@@ -13,7 +13,7 @@ slug فنی: **`foody`**
 - Ruleهای چندگروهی: داخل هر گروه OR و بین گروه‌ها AND؛ NOT سراسری هر Profile.
 - نرمال‌سازی حروف فارسی، فاصله‌ها و نیم‌فاصله.
 - بازه‌های زمانی روزانه با timezone قابل‌تنظیم.
-- Reply Pool، cooldown جدا برای هر Profile/گیرنده و حداقل فاصلهٔ سراسری ارسال.
+- Reply Pool، cooldown جدا برای هر Profile/گیرنده و حداقل فاصلهٔ سراسری ارسال که زمان آخرین موفقیت آن در PostgreSQL پایدار است.
 - Human Delay تصادفی و قابل‌تنظیم بین صفر تا ۳۰۰ ثانیه؛ این قابلیت نباید برای دورزدن ضداسپم یا محدودیت‌های Telegram استفاده شود.
 - Control Bot خصوصی برای ساخت، ویرایش و حذف Profile، Rule، زمان‌بندی و Reply.
 - دستور `/off` و دکمهٔ All Off برای توقف Matchهای جدید و لغو کارهای ارسال هنوز اجرا‌نشده.
@@ -28,7 +28,7 @@ FOODY قابلیت AI و فایل دائمی ندارد؛ بنابراین BYOK 
 
 دو کلاینت Telethon در یک process اجرا می‌شوند: User Client برای دیدن گروه و ارسال DM، و Control Bot برای مدیریت. تمام دادهٔ دائمی در PostgreSQL است. migration پیش از Ready شدن اجرا می‌شود و یک advisory lock در PostgreSQL تضمین می‌کند در هر لحظه فقط یک polling consumer فعال باشد.
 
-صف خروجی قبل از ارسال به وضعیت `sending` می‌رود. موفقیت، رد قطعی Telegram، FloodWait و نتیجهٔ نامعلوم جداگانه ثبت می‌شوند. پس از restart هر کار باقی‌مانده در `sending` به `ambiguous` تبدیل می‌شود و خودکار resend نمی‌شود.
+صف خروجی قبل از ارسال به وضعیت `sending` می‌رود. موفقیت، رد قطعی Telegram، FloodWait و نتیجهٔ نامعلوم جداگانه ثبت می‌شوند. پس از restart هر کار باقی‌مانده در `sending` به `ambiguous` تبدیل می‌شود و خودکار resend نمی‌شود. timestamp آخرین ارسال موفق در همان transaction نهایی‌شدن کار ثبت می‌شود؛ بنابراین restart فاصلهٔ `MIN_SEND_INTERVAL_SECONDS` را صفر نمی‌کند.
 
 کانتینر stateless است؛ هیچ دیتابیس، Session، log یا فایل کاربری روی filesystem کانتینر نگهداری نمی‌شود.
 
@@ -63,6 +63,7 @@ FOODY قابلیت AI و فایل دائمی ندارد؛ بنابراین BYOK 
 | `MIN_SEND_INTERVAL_SECONDS` | اختیاری | فاصلهٔ حداقل سراسری ارسال |
 | `DEFAULT_USER_COOLDOWN_SECONDS` | اختیاری | cooldown پیش‌فرض Profile جدید |
 | `JOB_POLL_INTERVAL_SECONDS` | اختیاری | فاصلهٔ بررسی صف پایدار |
+| `POLLER_LOCK_WAIT_SECONDS` | اختیاری | حداکثر انتظار نسخهٔ جدید برای آزادشدن قفل نسخهٔ قبلی؛ پیش‌فرض ۱۲۰ ثانیه |
 
 `DATABASE_URL` باید به دیتابیس و user جداگانهٔ همین محصول با کمترین دسترسی لازم اشاره کند. PostgreSQL server می‌تواند در ابتدا مشترک باشد، اما database، user و password باید مستقل باشند.
 
@@ -152,6 +153,8 @@ GitHub Actions همین بررسی‌ها را با PostgreSQL موقت انجا
 
 پورت پیش‌فرض `8080` است. Ready در شروع migration و هنگام shutdown خاموش است.
 
+در Railway، deployment health check عمداً `/healthz` است، نه `/readyz`. FOODY سرویس HTTP کاربرمحور ندارد؛ این انتخاب اجازه می‌دهد نسخهٔ جدید هنگام انتظار برای advisory lock زنده شناخته شود تا Railway نسخهٔ قبلی را متوقف کند. `/readyz` همچنان معیار واقعی آمادگی عملیاتی است و تا گرفتن قفل و اتصال Telegram پاسخ `503` می‌دهد.
+
 ## لاگ و حریم خصوصی
 
 لاگ‌ها JSON و فقط روی stdout نوشته می‌شوند. Token، Session، متن پیام ورودی، Reply خام و خطای خام ارائه‌دهنده نباید log شوند. رخدادهای عملیاتی محدود در PostgreSQL نگهداری می‌شوند و retention فعلی آن‌ها ۱۴ روز است؛ Updateهای پردازش‌شده پس از ۷ روز پاک می‌شوند.
@@ -195,9 +198,32 @@ export BACKUP_ENCRYPTION_PASSPHRASE='...'
 
 در این مرحله هیچ سرویس Darkube ساخته یا متصل نشده است.
 
+## آماده‌سازی Railway تک‌Replica
+
+فایل `railway.toml` مسیر Docker، health check و teardown را مشخص می‌کند. Railway اعلام کرده Config as Code قدیمی تا `2026-12-01` پشتیبانی می‌شود؛ بنابراین مقادیر Dashboard/Service Variable زیر نیز باید منبع نهایی تنظیمات باشند و در مهاجرت بعدی به Railway IaC منتقل شوند:
+
+- تعداد Replica در Service Settings دقیقاً `1` باشد.
+- Health Check Path برابر `/healthz` باشد.
+- Deployment Overlap برابر `0` ثانیه باشد.
+- Draining Time برابر `30` ثانیه باشد تا نسخهٔ قبلی فرصت دریافت `SIGTERM` و آزادکردن قفل را داشته باشد.
+- `POLLER_LOCK_WAIT_SECONDS=120` باقی بماند یا از مجموع build-independent startup و draining بیشتر انتخاب شود.
+- PostgreSQL خارج از کانتینر و `DATABASE_URL` از Secretهای Railway باشد.
+- volume برای کانتینر برنامه لازم نیست.
+
+ترتیب handoff این است: نسخهٔ جدید `/healthz` را پاسخ می‌دهد و برای advisory lock منتظر می‌ماند؛ Railway با overlap صفر نسخهٔ قبلی را متوقف می‌کند؛ نسخهٔ قبلی در shutdown قفل را آزاد می‌کند؛ نسخهٔ جدید قفل را می‌گیرد، Telegram را متصل می‌کند و سپس `/readyz` به `200` می‌رسد. در این فاصله وقفهٔ کوتاه polling پذیرفته شده است. اگر قفل تا پایان `POLLER_LOCK_WAIT_SECONDS` آزاد نشود، نسخهٔ جدید با خطا خارج می‌شود و restart policy آن را دوباره اجرا می‌کند.
+
+برای سازگاری با تنظیمات Dashboard، این دو Service Variable رسمی Railway نیز باید مقدار متناظر داشته باشند:
+
+```env
+RAILWAY_DEPLOYMENT_OVERLAP_SECONDS=0
+RAILWAY_DEPLOYMENT_DRAINING_SECONDS=30
+```
+
+مستندات Railway: [Deployment teardown](https://docs.railway.com/deployments/deployment-teardown) و [Variables reference](https://docs.railway.com/variables/reference). اکنون هیچ Project یا Service در Railway ساخته یا متصل نشده است.
+
 ## GitHub و انتشار آینده
 
-روند استاندارد: Branch جدا → بررسی و تست → Push فقط با اجازهٔ مالک → CI موفق → تأیید مالک → Pull Request و merge به `main` → انتشار خودکار Darkube.
+روند استاندارد: Branch جدا → بررسی و تست → Push فقط با اجازهٔ مالک → CI موفق → تأیید مالک → Pull Request و merge به `main` → انتشار روی میزبان انتخاب‌شده.
 
 پس از اولین Push و فقط با اجازهٔ مالک، روی `main` یک Ruleset/Branch Protection بسازید که direct push و force-push را ببندد و Pull Request و check اصلی `CI / verify` را اجباری کند. اگر plan یا نوع Repository این قابلیت را نداشت، Repository را محافظت‌شده تلقی نکنید و راه جایگزین انتخاب کنید.
 
@@ -209,6 +235,7 @@ export BACKUP_ENCRYPTION_PASSPHRASE='...'
 
 - Telegram ارسال دقیقاً-once ارائه نمی‌کند؛ FOODY با ثبت `sending` و توقف retry خودکار، ریسک duplicate را به ریسک نیاز به بررسی دستی تبدیل می‌کند.
 - یک وقفهٔ کوتاه هنگام Deploy تک‌Replica پذیرفته شده است.
+- Railway از `/healthz` برای handoff استفاده می‌کند؛ بنابراین «Active» شدن deployment اندکی پیش از Ready واقعی Bot رخ می‌دهد و `/readyz` باید جداگانه پایش شود.
 - chatهای بسیار پرحجم یا چند target به طراحی worker/partitioning جدید نیاز دارند.
 - بازهٔ Schedule عبوری از نیمه‌شب پشتیبانی نمی‌شود.
 - Replyهای ساخته‌شده در Control Bot دادهٔ دائمی‌اند؛ دسترسی دیتابیس و بکاپ باید محدود باشد.

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 from datetime import UTC, datetime
+from unittest.mock import AsyncMock, patch
 
 from app.models import Profile, SendJob
 from app.sender import Sender
@@ -11,6 +12,8 @@ class FakeDatabase:
     def __init__(self):
         self.finished = []
         self.profile_value = Profile(1, "test", "ON", 0)
+        self.global_wait_requests = []
+        self.global_wait_value = 0.0
 
     def profile(self, profile_id):
         return self.profile_value
@@ -20,6 +23,10 @@ class FakeDatabase:
 
     def is_opted_out(self, sender_id):
         return False
+
+    def global_send_wait(self, minimum_interval):
+        self.global_wait_requests.append(minimum_interval)
+        return self.global_wait_value
 
     def finish_job(self, job, status, error_class=None):
         self.finished.append((status, error_class))
@@ -50,10 +57,11 @@ class SenderTests(unittest.IsolatedAsyncioTestCase):
     async def test_success_is_recorded_once(self):
         db = FakeDatabase()
         client = FakeClient()
-        sender = Sender(client, db, 0, 0.01, ignore_notice)
+        sender = Sender(client, db, 5, 0.01, ignore_notice)
         await sender._send(self.job())
         self.assertEqual(client.messages, [(99, "reply")])
         self.assertEqual(db.finished, [("sent", None)])
+        self.assertEqual(db.global_wait_requests, [5])
 
     async def test_unknown_error_becomes_ambiguous_without_retry(self):
         db = FakeDatabase()
@@ -62,6 +70,16 @@ class SenderTests(unittest.IsolatedAsyncioTestCase):
         await sender._send(self.job())
         self.assertEqual(db.finished, [("ambiguous", "TimeoutError")])
         self.assertEqual(client.messages, [])
+
+    async def test_persisted_global_wait_is_applied_before_send(self):
+        db = FakeDatabase()
+        db.global_wait_value = 7.5
+        client = FakeClient()
+        sender = Sender(client, db, 10, 0.01, ignore_notice)
+        with patch("app.sender.asyncio.sleep", new=AsyncMock()) as sleep:
+            await sender._send(self.job())
+        sleep.assert_awaited_once_with(7.5)
+        self.assertEqual(client.messages, [(99, "reply")])
 
     async def test_off_profile_cancels_pending_job(self):
         db = FakeDatabase()

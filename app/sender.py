@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import suppress
-from time import monotonic
 
 from telethon.errors import FloodWaitError, RPCError
 
@@ -20,7 +19,6 @@ class Sender:
         self.min_interval = min_interval
         self.poll_interval = poll_interval
         self.notify = notify
-        self.last_send = 0.0
         self.stop_event = asyncio.Event()
 
     async def run(self) -> None:
@@ -50,7 +48,7 @@ class Sender:
         if self.db.in_cooldown(profile.id, job.sender_id, profile.cooldown_seconds):
             self.db.finish_job(job, "cancelled", "CooldownActive")
             return
-        wait = self.min_interval - (monotonic() - self.last_send)
+        wait = self.db.global_send_wait(self.min_interval)
         if wait > 0:
             await asyncio.sleep(wait)
         try:
@@ -70,7 +68,6 @@ class Sender:
             log.error("Outbound message has an ambiguous result", extra={"event": "send_ambiguous"})
             await self.notify("⚠️ نتیجهٔ یک ارسال نامشخص است؛ ارسال خودکار تکرار نشد.")
         else:
-            self.last_send = monotonic()
             self.db.finish_job(job, "sent")
 
     async def stop(self) -> None:

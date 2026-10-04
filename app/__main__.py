@@ -22,6 +22,24 @@ from .watcher import register_watcher
 log = logging.getLogger(__name__)
 
 
+async def acquire_poller_lock_with_wait(
+    db: Database,
+    stop: asyncio.Event,
+    timeout: float,
+    retry_interval: float = 1.0,
+) -> bool:
+    deadline = asyncio.get_running_loop().time() + timeout
+    while not stop.is_set():
+        if db.acquire_poller_lock():
+            return True
+        remaining = deadline - asyncio.get_running_loop().time()
+        if remaining <= 0:
+            return False
+        with suppress(TimeoutError):
+            await asyncio.wait_for(stop.wait(), timeout=min(retry_interval, remaining))
+    return False
+
+
 async def maintenance_loop(db: Database, stop: asyncio.Event) -> None:
     last_cleanup = monotonic()
     while not stop.is_set():
@@ -61,8 +79,15 @@ async def main() -> None:
         db = Database(config.database_url)
         state.db = db
         db.cleanup()
-        if not db.acquire_poller_lock():
-            raise RuntimeError("Another FOODY polling consumer is active")
+        lock_acquired = await acquire_poller_lock_with_wait(
+            db,
+            stop,
+            config.poller_lock_wait_seconds,
+        )
+        if not lock_acquired:
+            if stop.is_set():
+                return
+            raise RuntimeError("Telegram polling lock was not released before the startup timeout")
         ambiguous = db.recover_inflight()
         if ambiguous:
             log.warning(

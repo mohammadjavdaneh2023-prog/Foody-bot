@@ -26,6 +26,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.app_version, "test-version")
         self.assertEqual(config.timezone_name, "Asia/Tehran")
         self.assertEqual(config.port, 8080)
+        self.assertEqual(config.poller_lock_wait_seconds, 120)
 
     def test_missing_values_are_reported_by_name_not_value(self):
         values = self.values | {"TG_API_HASH": ""}
