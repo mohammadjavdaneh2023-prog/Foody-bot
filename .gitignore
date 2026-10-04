@@ -1,0 +1,50 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.session
+*.session-journal
+
+# Python
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Build and dependency output
+build/
+dist/
+.deps/
+node_modules/
+
+# Runtime data
+data/
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.log
+*.log.*
+logs/
+tmp/
+temp/
+backups/
+*.dump
+*.backup
+*.enc
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

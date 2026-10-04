@@ -1,0 +1,32 @@
+services:
+  postgres:
+    image: postgres:16.4-bookworm
+    environment:
+      POSTGRES_DB: foody
+      POSTGRES_USER: foody
+      POSTGRES_PASSWORD: local-development-only
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U foody -d foody"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - foody_postgres:/var/lib/postgresql/data
+
+  app:
+    build: .
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://foody:local-development-only@postgres:5432/foody
+      PORT: "8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    stop_grace_period: 30s
+
+volumes:
+  foody_postgres:
