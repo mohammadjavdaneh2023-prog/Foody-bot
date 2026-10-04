@@ -398,10 +398,11 @@ class Database:
                 "INSERT INTO rule_groups(profile_id,position) VALUES (%s,%s) RETURNING id",
                 (profile_id, position),
             ).fetchone()["id"]
-            conn.executemany(
-                "INSERT INTO rule_terms(group_id,term,normalized_term) VALUES (%s,%s,%s)",
-                [(group_id, term, normalize_text(term)) for term in terms],
-            )
+            with conn.cursor() as cursor:
+                cursor.executemany(
+                    "INSERT INTO rule_terms(group_id,term,normalized_term) VALUES (%s,%s,%s)",
+                    [(group_id, term, normalize_text(term)) for term in terms],
+                )
 
     def delete_group(self, group_id: int) -> None:
         with self.pool.connection() as conn:
@@ -443,8 +444,8 @@ class Database:
             ]
 
     def add_not_terms(self, profile_id: int, terms: list[str]) -> None:
-        with self.pool.connection() as conn:
-            conn.executemany(
+        with self.pool.connection() as conn, conn.cursor() as cursor:
+            cursor.executemany(
                 "INSERT INTO not_terms(profile_id,term,normalized_term) VALUES (%s,%s,%s)",
                 [(profile_id, term, normalize_text(term)) for term in terms],
             )
