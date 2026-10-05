@@ -11,7 +11,8 @@
 5. Watcher فقط پیام تازهٔ target chat را بررسی می‌کند؛ اولین Profile تطبیق‌یافته انتخاب می‌شود.
 6. Update و کار خروجی اتمیک و deduplicated در PostgreSQL ثبت می‌شوند.
 7. Sender پس از Human Delay، cooldown و rate limit، DM را ارسال و نتیجه را ثبت می‌کند.
-8. مالک از Status و Recent Logs وضعیت را می‌بیند یا با `/off` همهٔ Profileها را خاموش می‌کند.
+8. پس از موفقیت، متن دقیق DM در پیام خصوصی Control Bot و Saved Messages حساب مالک اعلان می‌شود؛ خطای این اعلان باعث ارسال دوبارهٔ DM نمی‌شود.
+9. مالک از Status و Recent Logs وضعیت را می‌بیند یا با `/off` همهٔ Profileها را خاموش می‌کند.
 
 ## داده‌های دائمی
 
@@ -28,14 +29,15 @@
 ## سرویس‌های خارجی
 
 - Telegram MTProto برای User Client و Control Bot.
+- اعلان متن DM موفق به Control Bot مالک و Saved Messages حساب مالک.
 - PostgreSQL برای همهٔ داده‌های دائمی.
-- Darkube و GitHub فقط در انتشار آینده و پس از اجازهٔ مالک.
+- GitHub Actions برای بررسی تغییرات و Railway برای میزبانی و انتشار.
 
 AI و فایل دائمی محصول وجود ندارند؛ Gemini، Cloudflare، S3 و providerهای AI در runtime استفاده نمی‌شوند.
 
 ## اختلاف مستندات قدیمی با کد قبلی
 
-- سند قدیمی SQLite و Railway را الزام می‌دانست؛ قرارداد جدید PostgreSQL، Docker و Darkube `c23` را الزام می‌کند.
+- سند قدیمی SQLite و Railway را الزام می‌دانست؛ نسخهٔ فعلی PostgreSQL و Docker دارد و روی Railway منتشر می‌شود.
 - سند قدیمی صف را حافظه‌ای توصیف می‌کرد؛ این صف restart-safe نبود.
 - سند قدیمی health endpoint و migration نسخه‌دار نداشت.
 - پیاده‌سازی قبلی Human Delay را داشت، هرچند بخش‌های قدیمی Specification آن را کامل پوشش نمی‌دادند.

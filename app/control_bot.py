@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import logging
 from collections import defaultdict
 from contextlib import suppress
 from time import monotonic
@@ -11,6 +12,7 @@ from .db import Database
 from .scheduler import parse_delay_range, parse_window
 
 DAYS = ["دوشنبه", "سه‌شنبه", "چهارشنبه", "پنجشنبه", "جمعه", "شنبه", "یکشنبه"]
+log = logging.getLogger(__name__)
 
 
 class ControlBot:
@@ -32,6 +34,36 @@ class ControlBot:
         self.last_notices[key] = now
         with suppress(Exception):
             await self.client.send_message(self.admin_id, text)
+
+    async def notify_sent(self, sent_text: str):
+        prefix = "✅ به یک نفر پیام دادم که متن پیامش این بود:\n\n"
+        continuation = "ادامهٔ متن پیام:\n\n"
+        chunk_size = 3500
+        first_size = chunk_size - len(prefix)
+        chunks = [prefix + sent_text[:first_size]]
+        remaining = sent_text[first_size:]
+        while remaining:
+            size = chunk_size - len(continuation)
+            chunks.append(continuation + remaining[:size])
+            remaining = remaining[size:]
+
+        for client, peer, destination in (
+            (self.client, self.admin_id, "control_bot"),
+            (self.user_client, "me", "saved_messages"),
+        ):
+            for chunk in chunks:
+                try:
+                    await client.send_message(peer, chunk, parse_mode=None)
+                except Exception as exc:
+                    log.warning(
+                        "Successful-send notification failed",
+                        extra={
+                            "event": "send_notification_failed",
+                            "destination": destination,
+                            "error_class": type(exc).__name__,
+                        },
+                    )
+                    break
 
     def authorized(self, event) -> bool:
         return event.sender_id == self.admin_id

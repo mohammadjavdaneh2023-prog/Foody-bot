@@ -14,6 +14,7 @@ slug فنی: **`foody`**
 - نرمال‌سازی حروف فارسی، فاصله‌ها و نیم‌فاصله.
 - بازه‌های زمانی روزانه با timezone قابل‌تنظیم.
 - Reply Pool، cooldown جدا برای هر Profile/گیرنده و حداقل فاصلهٔ سراسری ارسال که زمان آخرین موفقیت آن در PostgreSQL پایدار است.
+- پس از هر DM موفق، متن ارسالی به‌صورت خصوصی در Control Bot و Saved Messages حساب مالک اطلاع داده می‌شود.
 - Human Delay تصادفی و قابل‌تنظیم بین صفر تا ۳۰۰ ثانیه؛ این قابلیت نباید برای دورزدن ضداسپم یا محدودیت‌های Telegram استفاده شود.
 - Control Bot خصوصی برای ساخت، ویرایش و حذف Profile، Rule، زمان‌بندی و Reply.
 - دستور `/off` و دکمهٔ All Off برای توقف Matchهای جدید و لغو کارهای ارسال هنوز اجرا‌نشده.
@@ -157,7 +158,7 @@ GitHub Actions همین بررسی‌ها را با PostgreSQL موقت انجا
 
 ## لاگ و حریم خصوصی
 
-لاگ‌ها JSON و فقط روی stdout نوشته می‌شوند. Token، Session، متن پیام ورودی، Reply خام و خطای خام ارائه‌دهنده نباید log شوند. رخدادهای عملیاتی محدود در PostgreSQL نگهداری می‌شوند و retention فعلی آن‌ها ۱۴ روز است؛ Updateهای پردازش‌شده پس از ۷ روز پاک می‌شوند.
+لاگ‌ها JSON و فقط روی stdout نوشته می‌شوند. Token، Session، متن پیام ورودی، Reply خام و خطای خام ارائه‌دهنده نباید log شوند. پس از ارسال موفق، متن Reply بنا به درخواست مالک در پیام خصوصی Control Bot و Saved Messages حساب او فرستاده می‌شود؛ این اعلان در log یا دیتابیس ذخیره نمی‌شود. رخدادهای عملیاتی محدود در PostgreSQL نگهداری می‌شوند و retention فعلی آن‌ها ۱۴ روز است؛ Updateهای پردازش‌شده پس از ۷ روز پاک می‌شوند.
 
 Control Bot فقط تنظیمات مدیریتی `CONTROL_ADMIN_ID` را می‌پذیرد؛ سایر کاربران فقط می‌توانند با `/stop` انصراف دهند یا با `/allow` انصراف را بردارند. مالک باید مسیر opt-out را به گیرندگان اعلام کند و رضایت و سیاست Telegram را رعایت کند. ارسال ناخواسته، scraping تاریخچه، bulk messaging، دورزدن محدودیت منطقه‌ای/ضداسپم و تقلید فریبندهٔ انسان خارج از دامنه و ممنوع است. Human Delay صرفاً یک تأخیر محصولی قابل‌مشاهده است و مجوز نقض سیاست Telegram نیست.
 
@@ -183,7 +184,7 @@ export BACKUP_ENCRYPTION_PASSPHRASE='...'
 
 سیاست پیشنهادی: ۷ نسخهٔ روزانه، ۵ نسخهٔ هفتگی و ۱۲ نسخهٔ ماهانه. حداقل ماهانه یک Restore آزمایشی انجام و نتیجه ثبت شود. بکاپ production در این Repository یا کانتینر نگهداری نشود و بکاپ میزبان تنها نسخهٔ قابل‌اعتماد فرض نشود.
 
-## آماده‌سازی Darkube `c23`
+## Darkube `c23` (گزینهٔ جایگزین)
 
 - منبع build: `Dockerfile` در ریشه.
 - Cluster آینده: آلمان، `c23`.
@@ -196,7 +197,7 @@ export BACKUP_ENCRYPTION_PASSPHRASE='...'
 - تمام Secretها فقط در کنسول Darkube وارد شوند؛ volume برای برنامه لازم نیست.
 - Graceful shutdown حداقل ۳۰ ثانیه فرصت داشته باشد.
 
-در این مرحله هیچ سرویس Darkube ساخته یا متصل نشده است.
+این راهنما فقط برای گزینهٔ جایگزین Darkube نگه داشته شده است؛ میزبان عملیاتی فعلی Railway است.
 
 ## آماده‌سازی Railway تک‌Replica
 
@@ -219,13 +220,13 @@ RAILWAY_DEPLOYMENT_OVERLAP_SECONDS=0
 RAILWAY_DEPLOYMENT_DRAINING_SECONDS=30
 ```
 
-مستندات Railway: [Deployment teardown](https://docs.railway.com/deployments/deployment-teardown) و [Variables reference](https://docs.railway.com/variables/reference). اکنون هیچ Project یا Service در Railway ساخته یا متصل نشده است.
+تنظیمات Dashboard Railway برای مقادیر عملیاتی مرجع هستند. مستندات: [Deployment teardown](https://docs.railway.com/deployments/deployment-teardown) و [Variables reference](https://docs.railway.com/variables/reference).
 
 ## GitHub و انتشار آینده
 
-روند استاندارد: Branch جدا → بررسی و تست → Push فقط با اجازهٔ مالک → CI موفق → تأیید مالک → Pull Request و merge به `main` → انتشار روی میزبان انتخاب‌شده.
+روند موردنظر مالک: Codex تغییر را بررسی و تست می‌کند → پس از اجازهٔ مالک به `main` Push می‌شود → GitHub Actions اجرا می‌شود → Railway با گزینهٔ Wait for CI پس از موفقیت CI خودکار Deploy می‌کند.
 
-پس از اولین Push و فقط با اجازهٔ مالک، روی `main` یک Ruleset/Branch Protection بسازید که direct push و force-push را ببندد و Pull Request و check اصلی `CI / verify` را اجباری کند. اگر plan یا نوع Repository این قابلیت را نداشت، Repository را محافظت‌شده تلقی نکنید و راه جایگزین انتخاب کنید.
+Push یا تغییر زیرساخت بدون اجازهٔ مالک انجام نشود. هر تغییر اصلاحی پس از شکست CI باید قبل از Push گزارش و تأیید شود. Force-push انجام نشود. اگر بعداً Ruleset فعال شد، نباید مسیر Push مستقیمِ مورد تأیید مالک و اجرای CI را ناخواسته مسدود کند.
 
 ## Rollback
 

@@ -101,7 +101,14 @@ async def main() -> None:
         await bot.start(bot_token=config.bot_token)
         control = ControlBot(bot, user, db, config.admin_id, config)
         control.register()
-        sender = Sender(user, db, config.min_send_interval, config.job_poll_interval, control.notify)
+        sender = Sender(
+            user,
+            db,
+            config.min_send_interval,
+            config.job_poll_interval,
+            control.notify,
+            control.notify_sent,
+        )
         register_watcher(
             user,
             db,

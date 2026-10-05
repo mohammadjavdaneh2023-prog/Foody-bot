@@ -13,12 +13,13 @@ log = logging.getLogger(__name__)
 
 
 class Sender:
-    def __init__(self, client, db: Database, min_interval: float, poll_interval: float, notify):
+    def __init__(self, client, db: Database, min_interval: float, poll_interval: float, notify, notify_sent):
         self.client = client
         self.db = db
         self.min_interval = min_interval
         self.poll_interval = poll_interval
         self.notify = notify
+        self.notify_sent = notify_sent
         self.stop_event = asyncio.Event()
 
     async def run(self) -> None:
@@ -52,7 +53,7 @@ class Sender:
         if wait > 0:
             await asyncio.sleep(wait)
         try:
-            await self.client.send_message(job.sender_id, job.reply_text)
+            sent_message = await self.client.send_message(job.sender_id, job.reply_text)
         except FloodWaitError as exc:
             self.db.defer_job(job.id, exc.seconds, type(exc).__name__)
             await self.notify(f"⚠️ Telegram FloodWait: {exc.seconds} seconds")
@@ -69,6 +70,14 @@ class Sender:
             await self.notify("⚠️ نتیجهٔ یک ارسال نامشخص است؛ ارسال خودکار تکرار نشد.")
         else:
             self.db.finish_job(job, "sent")
+            sent_text = getattr(sent_message, "raw_text", None) or job.reply_text
+            try:
+                await self.notify_sent(sent_text)
+            except Exception as exc:
+                log.warning(
+                    "Successful-send notification failed",
+                    extra={"event": "send_notification_failed", "error_class": type(exc).__name__},
+                )
 
     async def stop(self) -> None:
         self.stop_event.set()
