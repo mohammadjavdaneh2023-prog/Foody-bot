@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import suppress
+from time import monotonic
 
 from telethon.errors import FloodWaitError, RPCError
 
@@ -52,6 +53,7 @@ class Sender:
         wait = self.db.global_send_wait(self.min_interval)
         if wait > 0:
             await asyncio.sleep(wait)
+        send_started = monotonic()
         try:
             sent_message = await self.client.send_message(job.sender_id, job.reply_text)
         except FloodWaitError as exc:
@@ -70,6 +72,12 @@ class Sender:
             await self.notify("⚠️ نتیجهٔ یک ارسال نامشخص است؛ ارسال خودکار تکرار نشد.")
         else:
             self.db.finish_job(job, "sent")
+            send_duration_ms = max(0, int((monotonic() - send_started) * 1000))
+            log.info(
+                "Telegram accepted outbound message (rpc_duration_ms=%s)",
+                send_duration_ms,
+                extra={"event": "send_succeeded"},
+            )
             sent_text = getattr(sent_message, "raw_text", None) or job.reply_text
             try:
                 await self.notify_sent(job.source_text, sent_text)
