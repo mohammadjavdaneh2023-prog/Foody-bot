@@ -17,7 +17,7 @@ from .health import HealthState, start_health_server
 from .logging_setup import setup_logging
 from .migrations import migrate
 from .sender import Sender
-from .watcher import register_watcher
+from .watcher import NewMessageReconciler, register_watcher
 
 log = logging.getLogger(__name__)
 
@@ -73,6 +73,7 @@ async def main() -> None:
     sender: Sender | None = None
     sender_task: asyncio.Task | None = None
     cleanup_task: asyncio.Task | None = None
+    reconciler_task: asyncio.Task | None = None
     try:
         applied = migrate(config.database_url)
         state.migrations_ready = True
@@ -98,9 +99,20 @@ async def main() -> None:
         if not await user.is_user_authorized():
             raise RuntimeError("TG_STRING_SESSION is invalid or unauthorized")
         await user.get_entity(config.target_chat_id)
-        await bot.start(bot_token=config.bot_token)
         control = ControlBot(bot, user, db, config.admin_id, config)
         control.register()
+        boot_time = datetime.now(UTC)
+        _, reconcile_message = register_watcher(
+            user,
+            db,
+            control.notify,
+            config.target_chat_id,
+            config.timezone,
+            boot_time,
+        )
+        reconciler = NewMessageReconciler(user, config.target_chat_id, reconcile_message)
+        await reconciler.initialize()
+        await bot.start(bot_token=config.bot_token)
         sender = Sender(
             user,
             db,
@@ -109,15 +121,8 @@ async def main() -> None:
             control.notify,
             control.notify_sent,
         )
-        register_watcher(
-            user,
-            db,
-            control.notify,
-            config.target_chat_id,
-            config.timezone,
-            datetime.now(UTC),
-        )
         sender_task = asyncio.create_task(sender.run(), name="durable-sender")
+        reconciler_task = asyncio.create_task(reconciler.run(stop), name="telegram-update-reconciler")
         cleanup_task = asyncio.create_task(maintenance_loop(db, stop), name="maintenance")
         state.telegram_ready = True
         db.log("STARTUP", detail=f"version={config.app_version}")
@@ -139,6 +144,12 @@ async def main() -> None:
             except TimeoutError:
                 sender_task.cancel()
                 await asyncio.gather(sender_task, return_exceptions=True)
+        if reconciler_task:
+            try:
+                await asyncio.wait_for(reconciler_task, timeout=5)
+            except TimeoutError:
+                reconciler_task.cancel()
+                await asyncio.gather(reconciler_task, return_exceptions=True)
         if cleanup_task:
             cleanup_task.cancel()
             await asyncio.gather(cleanup_task, return_exceptions=True)
