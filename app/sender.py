@@ -72,7 +72,7 @@ class Sender:
             self.db.finish_job(job, "sent")
             sent_text = getattr(sent_message, "raw_text", None) or job.reply_text
             try:
-                await self.notify_sent(sent_text)
+                await self.notify_sent(job.source_text, sent_text)
             except Exception as exc:
                 log.warning(
                     "Successful-send notification failed",

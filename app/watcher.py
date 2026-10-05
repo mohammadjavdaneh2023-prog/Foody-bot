@@ -37,7 +37,7 @@ def register_watcher(client, db: Database, notify, target_chat_id: int, app_time
                 db.record_ignored(target_chat_id, message.id)
                 return
             selected = matches[0]
-            result = db.enqueue_match(selected, target_chat_id, message.id, entity.id)
+            result = db.enqueue_match(selected, target_chat_id, message.id, entity.id, message.raw_text)
             if result == "duplicate":
                 db.log("SKIPPED_DUPLICATE", chat_id=target_chat_id, message_id=message.id)
             elif result == "no_reply":

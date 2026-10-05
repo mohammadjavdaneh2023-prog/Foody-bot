@@ -32,6 +32,7 @@ class SendJob:
     source_chat_id: int
     source_message_id: int
     sender_id: int
+    source_text: str
     reply_text: str
     attempt_count: int
     available_at: datetime

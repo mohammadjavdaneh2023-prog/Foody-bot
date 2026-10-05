@@ -73,7 +73,8 @@ class Database:
             row = conn.execute(
                 """
                 UPDATE outbound_jobs
-                SET status='ambiguous', completed_at=now(), updated_at=now(), error_class='ProcessRestart'
+                SET status='ambiguous', completed_at=now(), updated_at=now(), error_class='ProcessRestart',
+                    source_text=''
                 WHERE status='sending'
                 RETURNING id
                 """
@@ -87,7 +88,7 @@ class Database:
             conn.execute(
                 """
                 UPDATE outbound_jobs SET status='cancelled',completed_at=now(),updated_at=now(),
-                    error_class='ProfileDeleted'
+                    error_class='ProfileDeleted',source_text=''
                 WHERE status='pending' AND profile_id IS NULL
                 """
             )
@@ -139,7 +140,9 @@ class Database:
             ).fetchone()
         return row is not None
 
-    def enqueue_match(self, profile: Profile, chat_id: int, message_id: int, sender_id: int) -> str:
+    def enqueue_match(
+        self, profile: Profile, chat_id: int, message_id: int, sender_id: int, source_text: str
+    ) -> str:
         """Atomically deduplicate an update and persist its outbound work."""
         with self.pool.connection() as conn, conn.transaction():
             inserted = conn.execute(
@@ -166,10 +169,10 @@ class Database:
             conn.execute(
                 """
                     INSERT INTO outbound_jobs(
-                        profile_id,source_chat_id,source_message_id,sender_id,reply_text,available_at
-                    ) VALUES (%s,%s,%s,%s,%s,now()+(%s * interval '1 second'))
+                        profile_id,source_chat_id,source_message_id,sender_id,source_text,reply_text,available_at
+                    ) VALUES (%s,%s,%s,%s,%s,%s,now()+(%s * interval '1 second'))
                     """,
-                (profile.id, chat_id, message_id, sender_id, reply, delay),
+                (profile.id, chat_id, message_id, sender_id, source_text, reply, delay),
             )
             conn.execute(
                 """
@@ -185,7 +188,7 @@ class Database:
         with self.pool.connection() as conn, conn.transaction():
             row = conn.execute(
                 """
-                    SELECT id,profile_id,source_chat_id,source_message_id,sender_id,reply_text,
+                    SELECT id,profile_id,source_chat_id,source_message_id,sender_id,source_text,reply_text,
                            attempt_count,available_at
                     FROM outbound_jobs
                     WHERE status='pending' AND available_at <= now() AND profile_id IS NOT NULL
@@ -210,6 +213,7 @@ class Database:
             source_chat_id=row["source_chat_id"],
             source_message_id=row["source_message_id"],
             sender_id=row["sender_id"],
+            source_text=row["source_text"],
             reply_text=row["reply_text"],
             attempt_count=row["attempt_count"] + 1,
             available_at=row["available_at"],
@@ -253,7 +257,7 @@ class Database:
             transitioned = conn.execute(
                 """
                 UPDATE outbound_jobs
-                SET status=%s,completed_at=now(),updated_at=now(),error_class=%s
+                SET status=%s,completed_at=now(),updated_at=now(),error_class=%s,source_text=''
                 WHERE id=%s AND status='sending'
                 RETURNING id
                 """,

@@ -56,7 +56,7 @@ async def ignore_sent_notice(text):
 
 class SenderTests(unittest.IsolatedAsyncioTestCase):
     def job(self):
-        return SendJob(1, 1, -1001, 42, 99, "reply", 1, datetime.now(UTC))
+        return SendJob(1, 1, -1001, 42, 99, "group message", "reply", 1, datetime.now(UTC))
 
     async def test_success_is_recorded_once(self):
         db = FakeDatabase()
@@ -67,7 +67,7 @@ class SenderTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(client.messages, [(99, "reply")])
         self.assertEqual(db.finished, [("sent", None)])
         self.assertEqual(db.global_wait_requests, [5])
-        notify_sent.assert_awaited_once_with("reply")
+        notify_sent.assert_awaited_once_with("group message", "reply")
 
     async def test_notification_failure_does_not_change_success_or_retry_send(self):
         db = FakeDatabase()
@@ -79,7 +79,7 @@ class SenderTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(client.messages, [(99, "reply")])
         self.assertEqual(db.finished, [("sent", None)])
-        notify_sent.assert_awaited_once_with("reply")
+        notify_sent.assert_awaited_once_with("group message", "reply")
 
     async def test_unknown_error_becomes_ambiguous_without_retry(self):
         db = FakeDatabase()

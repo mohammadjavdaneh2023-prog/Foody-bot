@@ -48,10 +48,11 @@ class DatabaseIntegrationTests(unittest.TestCase):
         self.db.add_reply(profile_id, "سلام")
         self.db.update_profile(profile_id, mode="ON")
         profile = self.db.profile(profile_id)
-        self.assertEqual(self.db.enqueue_match(profile, -1001, 42, 99), "queued")
-        self.assertEqual(self.db.enqueue_match(profile, -1001, 42, 99), "duplicate")
+        self.assertEqual(self.db.enqueue_match(profile, -1001, 42, 99, "پیام ورودی"), "queued")
+        self.assertEqual(self.db.enqueue_match(profile, -1001, 42, 99, "پیام ورودی"), "duplicate")
         job = self.db.claim_next_job()
         self.assertIsNotNone(job)
+        self.assertEqual(job.source_text, "پیام ورودی")
         self.db.finish_job(job, "sent")
         self.assertTrue(self.db.in_cooldown(profile_id, 99, 900))
         self.assertEqual(self.db.queue_counts(), {"sent": 1})
@@ -60,10 +61,14 @@ class DatabaseIntegrationTests(unittest.TestCase):
         profile_id = self.db.create_profile("lunch", 0)
         self.db.add_reply(profile_id, "سلام")
         profile = self.db.profile(profile_id)
-        self.db.enqueue_match(profile, -1001, 43, 100)
-        self.assertIsNotNone(self.db.claim_next_job())
+        self.db.enqueue_match(profile, -1001, 43, 100, "پیام ورودی")
+        job = self.db.claim_next_job()
+        self.assertIsNotNone(job)
         self.assertEqual(self.db.recover_inflight(), 1)
         self.assertEqual(self.db.queue_counts(), {"ambiguous": 1})
+        with psycopg.connect(self.database_url) as conn:
+            stored = conn.execute("SELECT source_text FROM outbound_jobs WHERE id=%s", (job.id,)).fetchone()
+        self.assertEqual(stored[0], "")
 
     def test_recipient_opt_out_is_persistent(self):
         self.assertFalse(self.db.is_opted_out(99))
@@ -76,7 +81,7 @@ class DatabaseIntegrationTests(unittest.TestCase):
         profile_id = self.db.create_profile("lunch", 0)
         self.db.add_reply(profile_id, "سلام")
         profile = self.db.profile(profile_id)
-        self.db.enqueue_match(profile, -1001, 44, 101)
+        self.db.enqueue_match(profile, -1001, 44, 101, "پیام ورودی")
         job = self.db.claim_next_job()
         self.db.finish_job(job, "sent")
         first_wait = self.db.global_send_wait(60)
@@ -87,3 +92,21 @@ class DatabaseIntegrationTests(unittest.TestCase):
         second_wait = self.db.global_send_wait(60)
         self.assertGreater(second_wait, 55)
         self.assertLessEqual(second_wait, first_wait)
+
+    def test_source_text_is_cleared_when_job_reaches_terminal_state(self):
+        profile_id = self.db.create_profile("test", 0)
+        self.db.add_reply(profile_id, "پاسخ")
+        profile = self.db.profile(profile_id)
+        self.db.enqueue_match(profile, -1001, 45, 102, "متن پیام گروه")
+        job = self.db.claim_next_job()
+        self.assertEqual(job.source_text, "متن پیام گروه")
+
+        with psycopg.connect(self.database_url) as conn:
+            stored = conn.execute("SELECT source_text FROM outbound_jobs WHERE id=%s", (job.id,)).fetchone()
+        self.assertEqual(stored[0], "متن پیام گروه")
+
+        self.db.finish_job(job, "sent")
+
+        with psycopg.connect(self.database_url) as conn:
+            stored = conn.execute("SELECT source_text FROM outbound_jobs WHERE id=%s", (job.id,)).fetchone()
+        self.assertEqual(stored[0], "")

@@ -11,7 +11,7 @@
 5. Watcher فقط پیام تازهٔ target chat را بررسی می‌کند؛ اولین Profile تطبیق‌یافته انتخاب می‌شود.
 6. Update و کار خروجی اتمیک و deduplicated در PostgreSQL ثبت می‌شوند.
 7. Sender پس از Human Delay، cooldown و rate limit، DM را ارسال و نتیجه را ثبت می‌کند.
-8. پس از موفقیت، متن دقیق DM در پیام خصوصی Control Bot و Saved Messages حساب مالک اعلان می‌شود؛ خطای این اعلان باعث ارسال دوبارهٔ DM نمی‌شود.
+8. پس از موفقیت، متن پیام گروه و متن دقیق DM در پیام خصوصی Control Bot و Saved Messages حساب مالک اعلان می‌شوند؛ خطای این اعلان باعث ارسال دوبارهٔ DM نمی‌شود.
 9. مالک از Status و Recent Logs وضعیت را می‌بیند یا با `/off` همهٔ Profileها را خاموش می‌کند.
 
 ## داده‌های دائمی
@@ -23,13 +23,14 @@
 - تاریخ آخرین تماس هر Profile/گیرنده برای cooldown.
 - فهرست opt-out گیرندگان.
 - صف خروجی، attempt، نتیجه و حالت ambiguous.
+- متن ورودی فقط تا تعیین تکلیف کار خروجی در همان ردیف صف نگهداری و سپس پاک می‌شود.
 - timestamp آخرین ارسال موفق برای حفظ rate limit سراسری پس از restart.
 - رخدادهای عملیاتی کوتاه‌عمر.
 
 ## سرویس‌های خارجی
 
 - Telegram MTProto برای User Client و Control Bot.
-- اعلان متن DM موفق به Control Bot مالک و Saved Messages حساب مالک.
+- اعلان متن ورودی گروه و DM موفق به Control Bot مالک و Saved Messages حساب مالک.
 - PostgreSQL برای همهٔ داده‌های دائمی.
 - GitHub Actions برای بررسی تغییرات و Railway برای میزبانی و انتشار.
 

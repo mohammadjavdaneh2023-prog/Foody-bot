@@ -35,13 +35,15 @@ class ControlBot:
         with suppress(Exception):
             await self.client.send_message(self.admin_id, text)
 
-    async def notify_sent(self, sent_text: str):
-        prefix = "✅ به یک نفر پیام دادم که متن پیامش این بود:\n\n"
+    async def notify_sent(self, source_text: str, sent_text: str):
+        source = source_text or "متن پیام اولیه در صف قدیمی ذخیره نشده بود."
+        message = (
+            f"✅ به یک نفر پیام دادم.\n\nپیامی که فرستاده بود:\n{source}\n\nپیامی که بهش دادم:\n{sent_text}"
+        )
         continuation = "ادامهٔ متن پیام:\n\n"
         chunk_size = 3500
-        first_size = chunk_size - len(prefix)
-        chunks = [prefix + sent_text[:first_size]]
-        remaining = sent_text[first_size:]
+        chunks = [message[:chunk_size]]
+        remaining = message[chunk_size:]
         while remaining:
             size = chunk_size - len(continuation)
             chunks.append(continuation + remaining[:size])
