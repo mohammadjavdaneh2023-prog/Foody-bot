@@ -297,61 +297,43 @@ class Database:
             )
 
     def profiles(self) -> list[Profile]:
+        # Fixed query count regardless of profile/rule count; polling runs every second.
         with self.pool.connection() as conn:
             rows = conn.execute("SELECT * FROM profiles ORDER BY id").fetchall()
-            result = []
-            for row in rows:
-                groups = conn.execute(
-                    "SELECT id FROM rule_groups WHERE profile_id=%s ORDER BY position,id", (row["id"],)
-                ).fetchall()
-                rule_groups = [
-                    [
-                        term["normalized_term"]
-                        for term in conn.execute(
-                            "SELECT normalized_term FROM rule_terms WHERE group_id=%s ORDER BY id",
-                            (group["id"],),
-                        ).fetchall()
-                    ]
-                    for group in groups
-                ]
-                not_terms = [
-                    item["normalized_term"]
-                    for item in conn.execute(
-                        "SELECT normalized_term FROM not_terms WHERE profile_id=%s ORDER BY id",
-                        (row["id"],),
-                    ).fetchall()
-                ]
-                replies = [
-                    item["text"]
-                    for item in conn.execute(
-                        "SELECT text FROM reply_messages WHERE profile_id=%s ORDER BY id", (row["id"],)
-                    ).fetchall()
-                ]
-                windows = [
-                    ScheduleWindow(item["weekday"], item["start_minute"], item["end_minute"])
-                    for item in conn.execute(
-                        """
-                        SELECT weekday,start_minute,end_minute FROM schedule_windows
-                        WHERE profile_id=%s ORDER BY weekday,start_minute
-                        """,
-                        (row["id"],),
-                    ).fetchall()
-                ]
-                result.append(
-                    Profile(
-                        row["id"],
-                        row["name"],
-                        row["mode"],
-                        row["cooldown_seconds"],
-                        row["delay_min_seconds"],
-                        row["delay_max_seconds"],
-                        rule_groups,
-                        not_terms,
-                        replies,
-                        windows,
-                    )
-                )
-        return result
+            groups = conn.execute("SELECT id,profile_id FROM rule_groups ORDER BY position,id").fetchall()
+            terms = conn.execute("SELECT group_id,normalized_term FROM rule_terms ORDER BY id").fetchall()
+            excluded = conn.execute("SELECT profile_id,normalized_term FROM not_terms ORDER BY id").fetchall()
+            replies = conn.execute("SELECT profile_id,text FROM reply_messages ORDER BY id").fetchall()
+            windows = conn.execute("SELECT * FROM schedule_windows ORDER BY weekday,start_minute").fetchall()
+        group_terms = {}
+        for item in terms:
+            group_terms.setdefault(item["group_id"], []).append(item["normalized_term"])
+        profile_groups, profile_excluded, profile_replies, profile_windows = {}, {}, {}, {}
+        for item in groups:
+            profile_groups.setdefault(item["profile_id"], []).append(group_terms.get(item["id"], []))
+        for item in excluded:
+            profile_excluded.setdefault(item["profile_id"], []).append(item["normalized_term"])
+        for item in replies:
+            profile_replies.setdefault(item["profile_id"], []).append(item["text"])
+        for item in windows:
+            profile_windows.setdefault(item["profile_id"], []).append(
+                ScheduleWindow(item["weekday"], item["start_minute"], item["end_minute"])
+            )
+        return [
+            Profile(
+                row["id"],
+                row["name"],
+                row["mode"],
+                row["cooldown_seconds"],
+                row["delay_min_seconds"],
+                row["delay_max_seconds"],
+                profile_groups.get(row["id"], []),
+                profile_excluded.get(row["id"], []),
+                profile_replies.get(row["id"], []),
+                profile_windows.get(row["id"], []),
+            )
+            for row in rows
+        ]
 
     def profile(self, profile_id: int) -> Profile | None:
         return next((profile for profile in self.profiles() if profile.id == profile_id), None)

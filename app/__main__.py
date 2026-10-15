@@ -4,7 +4,6 @@ import asyncio
 import logging
 import signal
 from contextlib import suppress
-from datetime import UTC, datetime
 from time import monotonic
 
 from telethon import TelegramClient
@@ -17,7 +16,7 @@ from .health import HealthState, start_health_server
 from .logging_setup import setup_logging
 from .migrations import migrate
 from .sender import Sender
-from .watcher import register_watcher
+from .watcher import HistoryPoller
 
 log = logging.getLogger(__name__)
 
@@ -62,7 +61,12 @@ async def main() -> None:
     health_server = await start_health_server(state, config.port)
     db: Database | None = None
     user = TelegramClient(
-        StringSession(config.string_session), config.api_id, config.api_hash, proxy=config.proxy
+        StringSession(config.string_session),
+        config.api_id,
+        config.api_hash,
+        proxy=config.proxy,
+        receive_updates=False,
+        flood_sleep_threshold=0,
     )
     bot = TelegramClient(None, config.api_id, config.api_hash, proxy=config.proxy)
     stop = asyncio.Event()
@@ -73,6 +77,7 @@ async def main() -> None:
     sender: Sender | None = None
     sender_task: asyncio.Task | None = None
     cleanup_task: asyncio.Task | None = None
+    poller_task: asyncio.Task | None = None
     try:
         applied = migrate(config.database_url)
         state.migrations_ready = True
@@ -109,14 +114,15 @@ async def main() -> None:
             control.notify,
             control.notify_sent,
         )
-        register_watcher(
+        poller = HistoryPoller(
             user,
             db,
             control.notify,
             config.target_chat_id,
             config.timezone,
-            datetime.now(UTC),
+            stop,
         )
+        poller_task = asyncio.create_task(poller.run(), name="history-poller")
         sender_task = asyncio.create_task(sender.run(), name="durable-sender")
         cleanup_task = asyncio.create_task(maintenance_loop(db, stop), name="maintenance")
         state.telegram_ready = True
@@ -131,6 +137,14 @@ async def main() -> None:
     finally:
         state.shutting_down = True
         state.telegram_ready = False
+        stop.set()
+        if poller_task:
+            # Stop polling before draining sends and closing the database connection pool.
+            try:
+                await asyncio.wait_for(asyncio.shield(poller_task), timeout=10)
+            except TimeoutError:
+                poller_task.cancel()
+                await asyncio.gather(poller_task, return_exceptions=True)
         if sender:
             await sender.stop()
         if sender_task:

@@ -8,7 +8,7 @@
 2. مالک در Control Bot با `/start` یا `/menu` وارد منو می‌شود.
 3. Profile می‌سازد، Ruleهای AND/OR/NOT، Reply Pool، cooldown، Human Delay و Schedule را تنظیم می‌کند.
 4. Profile را `ON` یا `SCHEDULE` می‌کند.
-5. Watcher فقط پیام تازهٔ target chat را بررسی می‌کند؛ اولین Profile تطبیق‌یافته انتخاب می‌شود.
+5. History Poller فقط با وجود پروفایل فعال، سه پیام آخر target chat را با فاصلهٔ هدف یک ثانیه و بدون هم‌پوشانی دریافت می‌کند؛ اولین Profile تطبیق‌یافته انتخاب می‌شود. پیام‌های پیش از فعال‌شدن پاسخ داده نمی‌شوند.
 6. Update و کار خروجی اتمیک و deduplicated در PostgreSQL ثبت می‌شوند.
 7. Sender پس از Human Delay، cooldown و rate limit، DM را ارسال و نتیجه را ثبت می‌کند.
 8. پس از موفقیت، متن پیام گروه و متن دقیق DM در پیام خصوصی Control Bot و Saved Messages حساب مالک اعلان می‌شوند؛ خطای این اعلان باعث ارسال دوبارهٔ DM نمی‌شود.

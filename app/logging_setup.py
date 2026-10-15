@@ -38,6 +38,30 @@ class JsonFormatter(logging.Formatter):
         trace_id = getattr(record, "trace_id", None)
         if trace_id:
             payload["trace_id"] = str(trace_id)
+        # Only allow operational measurements; never serialize arbitrary extras or message text.
+        for key in (
+            "active_profiles",
+            "fetch_ms",
+            "message_count",
+            "message_id",
+            "profile_id",
+            "result",
+            "sender_ms",
+            "enqueue_ms",
+            "message_age_ms",
+            "profiles_ms",
+            "processing_ms",
+            "cycle_ms",
+            "wait_seconds",
+            "job_id",
+            "queue_wait_ms",
+            "send_ms",
+            "notification_ms",
+            "job_ms",
+        ):
+            value = getattr(record, key, None)
+            if value is not None:
+                payload[key] = value
         if record.exc_info:
             payload["error_class"] = record.exc_info[0].__name__
         elif getattr(record, "error_class", None):
